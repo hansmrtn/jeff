@@ -9,8 +9,6 @@ use winit::{
     window::Window,
 };
 
-#[cfg(target_arch = "wasm32")]
-use wasm_bindgen::prelude::*;
 
 pub struct State {
     window: Arc<Window>,
@@ -29,18 +27,13 @@ impl State {
 }
 
 pub struct App {
-    #[cfg(target_arch = "wasm32")]
-    proxy: Option<winit::event_loop::EventLoopProxy<State>>,
     state: Option<State>,
 }
 
 impl App {
-    pub fn new(#[cfg(target_arch = "wasm32")] event_loop: &EventLoop<State>) -> Self {
-        #[cfg(target_arch = "wasm32")]
-        let proxy = Some(event_loop.create_proxy());
+    pub fn new(
+        ) -> Self {
         Self {
-            #[cfg(target_arch = "wasm32")]
-            proxy,
             state: None,
         }
     }
@@ -98,8 +91,6 @@ pub fn run() -> Result<()> {
     env_logger::init();
     let event_loop = EventLoop::with_user_event().build()?;
     let mut app = App::new(
-        #[cfg(target_arch = "wasm32")]
-        &event_loop,
     );
 
     event_loop.run_app(&mut app)?;

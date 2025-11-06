@@ -1,8 +1,8 @@
 use anyhow::*;
-use image::GenericImageView;
+// use image::GenericImageView;
 
 pub struct Texture {
-    #[allow_unused]
+    // #[allow_unused]
     texture: wgpu::Texture,
     pub sampler: wgpu::Sampler,
     pub view: wgpu::TextureView,
@@ -23,7 +23,7 @@ impl Texture {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         img: &image::DynamicImage,
-        label: Option<&str>,
+        _label: Option<&str>,
     ) -> Result<Self> {
         let rgba8 = img.to_rgba8();
         let dimensions = rgba8.dimensions();

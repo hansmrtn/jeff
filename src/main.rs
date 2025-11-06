@@ -57,6 +57,76 @@ impl Camera {
     }
 }
 
+struct CameraController {
+    speed: f32, 
+    is_forward_pressed: bool, 
+    is_backward_pressed: bool, 
+    is_left_pressed: bool, 
+    is_right_pressed: bool,
+}
+
+impl CameraController {
+    fn new(speed: f32) -> Self {
+        Self {
+            speed, 
+            is_forward_pressed: false, 
+            is_backward_pressed: false, 
+            is_left_pressed: false, 
+            is_right_pressed: false,
+        }
+    }
+
+    fn handle_key(&mut self, code: KeyCode, is_pressed: bool) -> bool {
+        match code {
+            KeyCode::KeyW => {
+                self.is_forward_pressed = is_pressed; 
+                true
+            }
+            KeyCode::KeyA => {
+                self.is_left_pressed = is_pressed; 
+                true
+            }
+            KeyCode::KeyS => {
+                self.is_backward_pressed = is_pressed; 
+                true
+            }
+            KeyCode::KeyD => {
+                self.is_right_pressed = is_pressed; 
+                true
+            }
+            _ => false
+        }
+    }
+
+    fn update_camera(&self, camera: &mut Camera) {
+        use cgmath::InnerSpace; 
+        let forward = camera.target - camera.eye; 
+        let forward_norm = forward.normalize(); 
+        let forward_mag = forward.magnitude(); 
+
+        if self.is_forward_pressed && forward_mag > self.speed {
+            camera.eye += forward_norm * self.speed;
+        }
+
+        if self.is_backward_pressed {
+            camera.eye -= forward_norm * self.speed; 
+        }
+
+        let right = forward_norm.cross(camera.up); 
+
+        let forward = camera.target - camera.eye; 
+        let forward_mag = forward.magnitude(); 
+
+        if self.is_right_pressed {
+            camera.eye = camera.target - (forward + right * self.speed).normalize() * forward_mag; 
+        }
+
+        if self.is_left_pressed {
+            camera.eye = camera.target - (forward - right * self.speed).normalize() * forward_mag; 
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
@@ -126,6 +196,7 @@ pub struct State {
     camera_uniform: CameraUniform, 
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+    camera_controller: CameraController, 
     window: Arc<Window>,
 }
 
@@ -226,51 +297,6 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let render_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("render pipeline layout"),
-                bind_group_layouts: &[&texture_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("render pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Vertex::desc()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::REPLACE),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-            cache: None,
-        });
-
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("vertex buffer"),
             contents: bytemuck::cast_slice(VERTICES),
@@ -321,6 +347,7 @@ impl State {
             ],
             label: Some("camera_bind_group_layout"),
         }); 
+        // state.update(); 
 
         let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &camera_bind_group_layout, 
@@ -332,17 +359,68 @@ impl State {
             ],
             label: Some("camera_bind_group"),
         });
+        // state.update(); 
 
-        let render_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
-                label: Some("render pipeline layout"), 
-                bind_group_layouts: &[
-                    &texture_bind_group_layout, 
-                    &camera_bind_group_layout,
-                ], 
+        // let render_pipeline_layout = device.create_pipeline_layout(
+        //     &wgpu::PipelineLayoutDescriptor {
+        //         label: Some("render pipeline layout"), 
+        //         bind_group_layouts: &[
+        //             &texture_bind_group_layout, 
+        //             &camera_bind_group_layout,
+        //         ], 
+        //         push_constant_ranges: &[],
+        //     }
+        // );
+
+        let camera_controller = CameraController::new(0.2);
+
+
+
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("render pipeline layout"),
+                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
                 push_constant_ranges: &[],
-            }
-        );
+            });
+
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("render pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[Vertex::desc()],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
 
         Ok(Self {
             surface,
@@ -360,6 +438,7 @@ impl State {
             camera_uniform, 
             camera_buffer,
             camera_bind_group,
+            camera_controller, 
             window,
         })
     }
@@ -374,7 +453,7 @@ impl State {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.window.request_redraw();
+        // self.window.request_redraw();
 
         if !self.is_surface_configured {
             return Ok(());
@@ -428,15 +507,19 @@ impl State {
         Ok(())
     }
 
-    fn handle_key(&self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
-        match (code, is_pressed) {
-            (KeyCode::Escape, true) => event_loop.exit(),
-            _ => {}
+    fn handle_key(&mut self, event_loop: &ActiveEventLoop, code: KeyCode, is_pressed: bool) {
+        println!("pressed");
+        if code == KeyCode::Escape && is_pressed {
+            event_loop.exit(); 
+        } else {
+            self.camera_controller.handle_key(code, is_pressed);
         }
     }
 
     fn update(&mut self) {
-        todo!()
+        self.camera_controller.update_camera(&mut self.camera); 
+        self.camera_uniform.update_view_proj(&self.camera); 
+        self.queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[self.camera_uniform]));
     }
 }
 
@@ -479,7 +562,9 @@ impl ApplicationHandler<State> for App {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => state.resize(size.width, size.height),
             WindowEvent::RedrawRequested => {
+                state.update(); 
                 state.render();
+                state.window.request_redraw();
             }
             WindowEvent::KeyboardInput {
                 event:
